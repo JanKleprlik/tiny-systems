@@ -29,66 +29,108 @@ type Command =
 type State = 
   { Program : list<int * Command> 
     // TODO: Add variable context to the program state
+    Variables : Map<string, Value>
   }
 
 // ----------------------------------------------------------------------------
 // Utilities
 // ----------------------------------------------------------------------------
-
 let printValue value = 
-  // TODO: Add support for printing NumberValue and BoolValue
-  failwith "implemented in step 1"
+  match value with
+  | StringValue s -> printf "%s" s
+  | NumberValue n -> printf "%d" n
+  | BoolValue b -> printf "%b" b
 
-let getLine state line = failwith "implemented in step 1"
-let addLine state (line, cmd) = failwith "implemented in step 2"
+
+let getLine state line =
+  match state.Program |> List.tryFind (fun (l, _) -> l = line) with
+  | Some (_, cmd) -> cmd
+  | None -> failwith "Line not found"
+
+let addLine state (line, cmd) = 
+  List.sortBy (fun (l, _) -> l) (List.filter (fun (l, _) -> l <> line) state.Program @ [line, cmd])
+
 
 // ----------------------------------------------------------------------------
 // Evaluator
 // ----------------------------------------------------------------------------
 
-let rec evalExpression expr = 
-  // TODO: Add support for 'Function' and 'Variable'. For now, handle just the two
-  // functions we need, i.e. "-" (takes two numbers & returns a number) and "="
-  // (takes two values and returns Boolean). Note that you can test if two
-  // F# values are the same using '='. It works on values of type 'Value' too.
-  //
-  // HINT: You will need to pass the program state to 'evalExpression' 
-  // in order to be able to handle variables!
-  failwith "implemented in step 1"
+let rec evalExpression expr state = 
+  match expr with
+  | Const value -> value
+  | Function(name, [e1; e2]) ->
+      match name with
+      | "+" -> 
+          let v1 = evalExpression e1 state
+          let v2 = evalExpression e2 state
+          match v1, v2 with
+          | NumberValue n1, NumberValue n2 -> NumberValue (n1 + n2)
+          | _ -> failwith "Invalid arguments"
+      | "-" ->
+          let v1 = evalExpression e1 state
+          let v2 = evalExpression e2 state
+          match v1, v2 with
+          | NumberValue n1, NumberValue n2 -> NumberValue (n1 - n2)
+          | _ -> failwith "Invalid arguments"
+      | "=" ->
+          let v1 = evalExpression e1 state
+          let v2 = evalExpression e2 state
+          match v1, v2 with
+          | NumberValue n1, NumberValue n2 -> BoolValue (n1 = n2)
+          | _ -> failwith "Invalid arguments"
+      | _ -> failwith "Invalid function"
+  | Variable v ->
+      match state.Variables.TryFind v with
+      | Some v -> v
+      | None -> failwith "Variable not found"
+  
 
 let rec runCommand state (line, cmd) =
   match cmd with 
+  | Print(expr) ->
+      evalExpression expr state |> printValue
+      runNextLine state line
   | Run ->
       let first = List.head state.Program    
       runCommand state first
+  | Goto(line) ->
+      let cmd = getLine state line
+      runCommand state (line, cmd)
+  | Assign (n, e) ->
+      let v = evalExpression e state
+      let state = { state with Variables = state.Variables.Add(n, v) }
+      runNextLine state line 
+  | If (cond, fals) ->
+      let v = evalExpression cond state
+      match v with
+      | BoolValue true -> runCommand state (line, fals)
+      | BoolValue false -> runNextLine state line
+      | _ -> failwith "Invalid arguments"
 
-  | Print(expr) -> failwith "implemented in step 1"
-  | Goto(line) -> failwith "implemented in step 1"
-  
-  // TODO: Implement assignment and conditional. Assignment should run the
-  // next line after setting the variable value. 'If' is a bit trickier:
-  // * 'L1: IF TRUE THEN GOTO <L2>' will continue evaluating on line 'L2'
-  // * 'L1: IF FALSE THEN GOTO <L2>' will continue on line after 'L1'
-  // * 'L1: IF TRUE THEN PRINT "HI"' will print HI and continue on line after 'L1'
-  //
-  // HINT: If <e> evaluates to TRUE, you can call 'runCommand' recursively with
-  // the command in the 'THEN' branch and the current line as the line number.
-  | Assign _ | If _ -> failwith "not implemented"
 
-and runNextLine state line = failwith "implemented in step 1"
+and runNextLine state line = 
+  match state.Program |> List.tryFind (fun (l, _) -> l > line) with
+  | Some (l, cmd) -> runCommand state (l, cmd)
+  | None -> state
 
 // ----------------------------------------------------------------------------
 // Interactive program editing
 // ----------------------------------------------------------------------------
 
-let runInput state (line, cmd) = failwith "implemented in step 2"
-let runInputs state cmds = failwith "implemented in step 2"
+let runInput state (line, cmd) =
+  match line with
+  | Some ln -> { state with Program = addLine state (ln, cmd) }
+  | None -> runCommand state (System.Int32.MaxValue, cmd)
+      
+
+let runInputs state cmds =
+  List.fold runInput state cmds
 
 // ----------------------------------------------------------------------------
 // Test cases
 // ----------------------------------------------------------------------------
 
-let empty = { Program = [] } // TODO: Add empty variables to the initial state!
+let empty = { Program = []; Variables = Map.empty}
 
 let helloOnce = 
   [ Some 10, Print (Const (StringValue "HELLO WORLD\n")) 
