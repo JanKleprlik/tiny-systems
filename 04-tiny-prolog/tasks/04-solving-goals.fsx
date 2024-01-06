@@ -22,19 +22,63 @@ let rule p b = { Head = p; Body = b }
 // ----------------------------------------------------------------------------
 
 let rec substitute (subst:Map<string, Term>) term = 
-  failwith "implemented in step 2"
+  match term with
+  | Variable var ->
+  //oneliner?
+    if Map.containsKey var subst then 
+      subst.[var]
+    else
+      var |> Variable
+  | Predicate (p, args) ->
+    Predicate (p, args |> List.map (substitute subst))
+  | term ->
+    term
 
-let substituteSubst (newSubst:Map<string, Term>) (subst:list<string * Term>) = 
-  failwith "implemented in step 2"
+
+let rec substituteSubst (newSubst:Map<string, Term>) (subst:list<string * Term>) = 
+  match subst with
+  | [] ->
+    []
+  | (var, term)::tail ->
+    (var, substitute newSubst term)::(substituteSubst newSubst tail)
+
 
 let substituteTerms subst (terms:list<Term>) = 
-  failwith "implemented in step 2"
+  terms |> List.map (substitute subst)
+
 
 let rec unifyLists l1 l2 = 
-  failwith "implemented in steps 1 and 2"
+  match l1, l2 with
+  | [], [] -> 
+      [] |> Some
+  | h1::t1, h2::t2 ->
+    let s1 = unify h1 h2
+    match s1 with
+    | Some s1 ->
+      let sm1 = Map.ofList s1
+      let s2 = unifyLists (substituteTerms sm1 t1) (substituteTerms sm1 t2)
+      match s2 with
+      | Some s2 ->
+        let sm2 = Map.ofList s2
+        let ss1 = substituteSubst  sm2 s1
+        ss1 @ s2 |> Some
+      | _ -> None
+    | _ -> None
+  | _, _ -> None
 
-and unify t1 t2 = 
-  failwith "implemented in step 1"
+
+and unify t1 t2: option<list<string * Term>> = 
+  match t1, t2 with 
+  | Atom a1, Atom a2 when a1 = a2 ->
+    [] |> Some
+  | Predicate (p1, args1), Predicate (p2, args2) when p1 = p2 ->
+    unifyLists args1 args2
+  | Variable v1, anythg ->
+    [v1, anythg] |> Some
+  | anythg, Variable v2 ->
+    [v2, anythg] |> Some
+  | _ ->
+      None
 
 // ----------------------------------------------------------------------------
 // Searching the program (database) and variable renaming
@@ -45,35 +89,43 @@ let nextNumber =
   fun () -> n <- n + 1; n
 
 let rec freeVariables term = 
-  failwith "implemented in step 3"
+  match term with
+  | Variable var ->
+    [var]
+  | Predicate (p, args) ->
+    args |> List.collect freeVariables
+  | _ ->
+    []
+
 
 let withFreshVariables (clause:Clause) : Clause =
-  failwith "implemented in step 3"
+  let headVars = clause.Head |> freeVariables |> List.distinct
+  let bodyVars = clause.Body |> List.collect freeVariables |> List.distinct
+  let subst = headVars @ bodyVars |> List.map (fun v -> v, Variable (v + (nextNumber ()).ToString()))
+  { Head = clause.Head |> substitute (Map.ofList subst) ;
+    Body = clause.Body |> List.map (substitute (Map.ofList subst)) }
 
-let query (program:list<Clause>) (query:Term) =
-  failwith "implemented in step 3"
-
+let query (program:list<Clause>) (query:Term) 
+    : list<Clause * list<string * Term>> =
+  program |> List.choose (fun clause ->
+    let freshClause = withFreshVariables clause
+    match unify freshClause.Head query with
+    | Some subst ->
+      Some (freshClause, subst)
+    | _ ->
+      None
+  )
 let rec solve program subst goals = 
   match goals with 
   | g::goals -> 
-      // TODO: We need to solve the goal (term) 'g'. To do so, find all 
-      // matching clauses in the 'program' using 'query' and iterate over
-      // the returned list using 'for clause, newSubst in matches do'.
-      // For each possible solution, we need to add the 'clause.Body' to 
-      // the list of 'goals' and apply the substitution 'newSubst' to the
-      // new concatentated list of 'goals'. Then we need to apply the 
-      // substitution 'newSubst' to the substitution 'subst' we have so far,
-      // append the two and call 'solve' recursively with this new substitution
-      // to solve the new goals.
-      let matches = failwith "TODO"
+      let matches = g |> query program
       for clause, newSubst in matches do
-        let newGoals = failwith "TODO"
-        solve program (failwith "TODO") (failwith "TODO")
+        let newGoals = clause.Body @ goals |> substituteTerms (Map.ofList newSubst)
+        let newSubst2 = substituteSubst (Map.ofList newSubst) subst
+        solve program (newSubst2 @ newSubst) (newGoals)
 
   | [] -> 
-    // TODO: We solved all goals, which means 'subst' is a possible solution!
-    // Print 'subst' (either using printfn "%A" or in some nicer way).
-    failwith "not implemented" 
+    printf "%A" subst
 
 // ----------------------------------------------------------------------------
 // Querying the British royal family 

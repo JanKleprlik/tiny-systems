@@ -20,21 +20,64 @@ let rule p b = { Head = p; Body = b }
 // ----------------------------------------------------------------------------
 // Substitutions and unification of terms
 // ----------------------------------------------------------------------------
-
 let rec substitute (subst:Map<string, Term>) term = 
-  failwith "implemented in step 2"
+  match term with
+  | Variable var ->
+  //oneliner?
+    if Map.containsKey var subst then 
+      subst.[var]
+    else
+      var |> Variable
+  | Predicate (p, args) ->
+    Predicate (p, args |> List.map (substitute subst))
+  | term ->
+    term
 
-let substituteSubst (newSubst:Map<string, Term>) (subst:list<string * Term>) = 
-  failwith "implemented in step 2"
+
+let rec substituteSubst (newSubst:Map<string, Term>) (subst:list<string * Term>) = 
+  match subst with
+  | [] ->
+    []
+  | (var, term)::tail ->
+    (var, substitute newSubst term)::(substituteSubst newSubst tail)
+
 
 let substituteTerms subst (terms:list<Term>) = 
-  failwith "implemented in step 2"
+  terms |> List.map (substitute subst)
+
 
 let rec unifyLists l1 l2 = 
-  failwith "implemented in steps 1 and 2"
+  match l1, l2 with
+  | [], [] -> 
+      [] |> Some
+  | h1::t1, h2::t2 ->
+    let s1 = unify h1 h2
+    match s1 with
+    | Some s1 ->
+      let sm1 = Map.ofList s1
+      let s2 = unifyLists (substituteTerms sm1 t1) (substituteTerms sm1 t2)
+      match s2 with
+      | Some s2 ->
+        let sm2 = Map.ofList s2
+        let ss1 = substituteSubst  sm2 s1
+        ss1 @ s2 |> Some
+      | _ -> None
+    | _ -> None
+  | _, _ -> None
+
 
 and unify t1 t2 = 
-  failwith "implemented in step 1"
+  match t1, t2 with 
+  | Atom a1, Atom a2 when a1 = a2 ->
+    [] |> Some
+  | Predicate (p1, args1), Predicate (p2, args2) when p1 = p2 ->
+    unifyLists args1 args2
+  | Variable v1, anythg ->
+    [v1, anythg] |> Some
+  | anythg, Variable v2 ->
+    [v2, anythg] |> Some
+  | _ ->
+      None
 
 // ----------------------------------------------------------------------------
 // Pretty printing terms
@@ -42,12 +85,12 @@ and unify t1 t2 =
 
 let rec (|Number|_|) term = 
   match term with 
-  | _ -> 
-    // TODO: Write an active pattern to recognize numbers in the form used below.
-    // If the term is 'Atom("zero")' return Some(0). 
-    // If the term is 'Predicate("succ", [n])' where 'n' is itself
-    // a term representing number, return the number value +1. 
-    failwith "not implemented"
+  | Atom "zero" -> Some 0
+  | Predicate("succ", [n]) -> 
+    match n with 
+    | Number n -> Some (n + 1)
+    | _ -> None
+  | _ -> None
 
 
 let rec formatTerm term = 
@@ -59,7 +102,7 @@ let rec formatTerm term =
   | Predicate(p, items) ->
       // TODO: format all arguments recursively using 'formatTerm'
       // You can then concatenate the arguments using 'String.concat'
-      failwith "not implemented"
+      items |> List.map formatTerm |> String.concat " "
 
 // ----------------------------------------------------------------------------
 // Searching the program (database) and variable renaming
@@ -70,19 +113,46 @@ let nextNumber =
   fun () -> n <- n + 1; n
 
 let rec freeVariables term = 
-  failwith "implemented in step 3"
+  match term with
+  | Variable var ->
+    [var]
+  | Predicate (p, args) ->
+    args |> List.collect freeVariables
+  | _ ->
+    []
+
 
 let withFreshVariables (clause:Clause) : Clause =
-  failwith "implemented in step 3"
+  let headVars = clause.Head |> freeVariables |> List.distinct
+  let bodyVars = clause.Body |> List.collect freeVariables |> List.distinct
+  let subst = headVars @ bodyVars |> List.map (fun v -> v, Variable (v + (nextNumber ()).ToString()))
+  { Head = clause.Head |> substitute (Map.ofList subst) ;
+    Body = clause.Body |> List.map (substitute (Map.ofList subst)) }
 
-let query (program:list<Clause>) (query:Term) =
-  failwith "implemented in step 3"
-
+let query (program:list<Clause>) (query:Term) 
+    : list<Clause * list<string * Term>> =
+  program |> List.choose (fun clause ->
+    let freshClause = withFreshVariables clause
+    match unify freshClause.Head query with
+    | Some subst ->
+      Some (freshClause, subst)
+    | _ ->
+      None
+  )
 let rec solve program subst goals =
   // TODO: When printing the computed substitution 'subst', print
   // the terms nicely using 'formatTerm'. You can use 'for' loop like:
   // 'for var, term in subst do printfn ...'
-  failwith "not implemented" 
+  match goals with 
+  | g::goals -> 
+      let matches = g |> query program
+      for clause, newSubst in matches do
+        let newGoals = clause.Body @ goals |> substituteTerms (Map.ofList newSubst)
+        let newSubst2 = substituteSubst (Map.ofList newSubst) subst
+        solve program (newSubst2 @ newSubst) (newGoals)
+
+  | [] -> 
+    for var, term in subst do printfn "%s = %s" var (formatTerm term)
 
 // ----------------------------------------------------------------------------
 // Querying the British royal family 
@@ -116,7 +186,10 @@ let rec num n =
   // TODO: Write a helper that generates a term representing number.
   // This should return Atom("zero") when n is 0 and otherwise
   // succ(succ(...(zero))) with appropriate number of 'succ's.
-  failwith "not implemented"
+  if n = 0 then
+    Atom("zero")
+  else
+    Predicate("succ", [num (n - 1)])
 
 
 // Addition and equality testing for Peano arithmetic

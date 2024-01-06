@@ -22,19 +22,63 @@ let rule p b = { Head = p; Body = b }
 // ----------------------------------------------------------------------------
 
 let rec substitute (subst:Map<string, Term>) term = 
-  failwith "implemented in step 2"
+  match term with
+  | Variable var ->
+  //oneliner?
+    if Map.containsKey var subst then 
+      subst.[var]
+    else
+      var |> Variable
+  | Predicate (p, args) ->
+    Predicate (p, args |> List.map (substitute subst))
+  | term ->
+    term
 
-let substituteSubst (newSubst:Map<string, Term>) (subst:list<string * Term>) = 
-  failwith "implemented in step 2"
+
+let rec substituteSubst (newSubst:Map<string, Term>) (subst:list<string * Term>) = 
+  match subst with
+  | [] ->
+    []
+  | (var, term)::tail ->
+    (var, substitute newSubst term)::(substituteSubst newSubst tail)
+
 
 let substituteTerms subst (terms:list<Term>) = 
-  failwith "implemented in step 2"
+  terms |> List.map (substitute subst)
+
 
 let rec unifyLists l1 l2 = 
-  failwith "implemented in steps 1 and 2"
+  match l1, l2 with
+  | [], [] -> 
+      [] |> Some
+  | h1::t1, h2::t2 ->
+    let s1 = unify h1 h2
+    match s1 with
+    | Some s1 ->
+      let sm1 = Map.ofList s1
+      let s2 = unifyLists (substituteTerms sm1 t1) (substituteTerms sm1 t2)
+      match s2 with
+      | Some s2 ->
+        let sm2 = Map.ofList s2
+        let ss1 = substituteSubst  sm2 s1
+        ss1 @ s2 |> Some
+      | _ -> None
+    | _ -> None
+  | _, _ -> None
+
 
 and unify t1 t2 = 
-  failwith "implemented in step 1"
+  match t1, t2 with 
+  | Atom a1, Atom a2 when a1 = a2 ->
+    [] |> Some
+  | Predicate (p1, args1), Predicate (p2, args2) when p1 = p2 ->
+    unifyLists args1 args2
+  | Variable v1, anythg ->
+    [v1, anythg] |> Some
+  | anythg, Variable v2 ->
+    [v2, anythg] |> Some
+  | _ ->
+      None
 
 // ----------------------------------------------------------------------------
 // Searching the program (database) and variable renaming
@@ -48,37 +92,32 @@ let rec freeVariables term =
   // TODO: Return a list of all variables that appear in 'term'
   // (this may contain duplicates, we will eliminate them below)
   // HINT: Use List.collect: ('a -> list<'b>) -> list<'a> -> list<'b>
-  failwith "not implemented"
+  match term with
+  | Variable var ->
+    [var]
+  | Predicate (p, args) ->
+    args |> List.collect freeVariables
+  | _ ->
+    []
 
 
 let withFreshVariables (clause:Clause) : Clause =
-  // TODO: Get a list of distinct variables in the clause (using 
-  // 'freeVariables' and 'List.distinct'), generate a substitution 
-  // that append a number 'n' obtained by 'nextNumber()' to the end
-  // of all the variable names, and apply the substitutions to the 
-  // head and body of the clause.
-  //
-  // For example, 'grandparent(X,Y) :- parent(X,Z), parent(Z,Y)' may
-  // become 'grandparent(X3,Y3) :- parent(X3,Z3), parent(Z3,Y3)'
-  //
-  // This may not be correct if the user-provided names of variables
-  // had numbers in them in a certain format, but that's OK for now! 
-  failwith "not implemented"
-
+  let headVars = clause.Head |> freeVariables |> List.distinct
+  let bodyVars = clause.Body |> List.collect freeVariables |> List.distinct
+  let subst = headVars @ bodyVars |> List.map (fun v -> v, Variable (v + (nextNumber ()).ToString()))
+  { Head = clause.Head |> substitute (Map.ofList subst) ;
+    Body = clause.Body |> List.map (substitute (Map.ofList subst)) }
 
 let query (program:list<Clause>) (query:Term) 
     : list<Clause * list<string * Term>> =
-  // TODO: Return all clauses from 'program' whose 'Head' can be
-  // unified with the specified 'query' and return the resulting
-  // substitutions. Before unifying, rename variables in the program
-  // rule using 'withFreshVariables'. You can do this using 'List.choose' 
-  // or by using list comprehension.
-  // 
-  // The return type of this is a list of tuples consisting of the matching
-  // clause and a substitution (list<string * Term>). Calling 'unify'
-  // gives you 'option<list<string * Term>>', so you need to pattern match
-  // on this and if it is 'Some(subst)' return 'Some(clause, subst)'.
-  failwith "not implemented"
+  program |> List.choose (fun clause ->
+    let freshClause = withFreshVariables clause
+    match unify freshClause.Head query with
+    | Some subst ->
+      Some (freshClause, subst)
+    | _ ->
+      None
+  )
 
 
 // ----------------------------------------------------------------------------
