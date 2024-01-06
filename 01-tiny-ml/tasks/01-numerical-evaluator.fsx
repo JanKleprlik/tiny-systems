@@ -3,7 +3,7 @@
 // ----------------------------------------------------------------------------
 
 // Values (we only have numbers), expressions (we have constants,
-// binary operators and variables) and variable contexts)
+// binary operators and variables) and variable contexts
 
 type Value = 
   | ValNum of int 
