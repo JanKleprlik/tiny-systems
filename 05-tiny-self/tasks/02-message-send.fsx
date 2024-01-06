@@ -40,27 +40,37 @@ let makeNativeMethod f =
 let addSlot (n:string) (contents:Objekt) (obj:Objekt) : unit = 
   // TODO: Make a new non-parent slot and add it to 'Slots' 
   // (create a new list and assign it to the 'Slots' field.)
-  failwith "not implemented"
+  obj.Slots <- obj.Slots @ [makeSlot n contents]
 
 let addParentSlot (n:string) (contents:Objekt) (obj:Objekt) : unit = 
   // TODO: Make a new parent slot and add it to 'Slots' 
   // (create a new list and assign it to the 'Slots' field.)
-  failwith "not implemented"
+  obj.Slots <- obj.Slots @ [makeParentSlot n contents]
 
 let cloneObject (obj:Objekt) : Objekt = 
   // TODO: Return a new 'Objekt' with exactly the same slots, code & special
   // as 'obj' (we are not doing "deep copy" - the two clones will share
   // references to the same objects in after their slots are copied)
-  failwith "not implemented!"
+  makeDataObject obj.Slots
 
 // ----------------------------------------------------------------------------
 // Lookup and message sending
 // ----------------------------------------------------------------------------
 
-let rec lookup msg obj = failwith "implemented in step 1"
-and parentLookup msg obj = failwith "implemented in step 1"
 
-// See also §3.3.7 (https://handbook.selflanguage.org/SelfHandbook2017.1.pdf)
+let rec lookup (msg:string) (obj:Objekt) : list<Slot> = 
+  // TODO: Implement message lookup (as documented in the Self handbook)
+  // * If there is a slot named 'msg' in 'obj', return that 
+  // * Otherwise, return all slots named 'msg' slots in objects 
+  //   contained in all the parent slots of 'obj' (concatenate them)
+  match obj.Slots |> List.tryFind (fun s -> s.Name = msg) with
+  | Some slot -> [slot]
+  | None -> parentLookup msg obj
+and parentLookup msg obj = obj.Slots |> List.collect (fun s -> 
+      if s.IsParent then lookup msg s.Contents else [])
+
+
+// See also ï¿½3.3.7 (https://handbook.selflanguage.org/SelfHandbook2017.1.pdf)
 //
 // Note that we do not need special "primitive sends". Instead, we have special
 // objects and so we need to run the "native" method when we it is called.
@@ -80,12 +90,25 @@ let eval (slotValue:Objekt) (instance:Objekt) =
   //
   // NOTE: Why do we set the receiver as parent of the activation record?
   // We can then send messages to it directly to access the receiver's slots!
-  failwith "not implemented"
+  match slotValue.Code with
+  | None -> slotValue
+  | Some code ->
+    match code.Special with
+    | Some(Native fce) ->
+      let cloned = cloneObject code
+      addParentSlot "self*" instance cloned
+      fce cloned
+    | _ -> failwith "not implemented!"
 
 let send (msg:string) (instance:Objekt) : Objekt =
   // TODO: Use 'lookup' to find slots with the name of the message 'msg'. If
   // there is exactly one, evaluate it using 'eval', otherwise report an error.
-  failwith "not implemented!"
+  let mslots = instance |> lookup msg;
+
+  match mslots with
+  | [slot] -> eval slot.Contents instance
+  | _ -> mslots |> printf "slots: %A\n";
+         failwithf "message not understood: %s" msg
 
 // ----------------------------------------------------------------------------
 // Helpers for testing & object construction
@@ -102,23 +125,24 @@ let getStringValue o =
   | _ -> failwith "not a string value"
 
 // TODO: Define empty object with no data in it (needed below)
-let empty : Objekt = failwith "not implemented"
+let empty : Objekt = makeDataObject []
 
 let printCode = makeNativeMethod (fun arcd ->
-  // TODO: Print the string value! To get the string, you can send 'value' 
-  // to the activation record (because this has the receiver string as a 
-  // parent). The returned object will be 'Special' with 'String' in it.
-  // The function needs to return 'Objekt' - you can return 'empty'.
-  failwith "not implemented!"
+  let s = send "value" arcd
+  match s.Special with
+    | Some(String(s)) ->
+      printfn "%s" s
+    | _ -> failwith "invalid special"
+  empty
 )
+
 let stringPrototype = makeDataObject [
-  makeSlot "print" printCode  
+  makeSlot "print" printCode
 ]
 let makeString s = 
   makeDataObject [ 
     makeSlot "value" (makeSpecialObject [] (String s)) 
-    // TODO: Make 'stringPrototype' a parent of this string 
-    // object so that we can send the 'print' message to it!
+    makeParentSlot "parent*" stringPrototype
   ]
 
 // ----------------------------------------------------------------------------
@@ -142,8 +166,11 @@ larry |> send "name" |> send "print"
 larry |> send "sound" |> send "print"
 larry |> send "book" |> send "print"
 
-let cheshire = failwith "implemented in step 1"
-
+let cheshire = makeDataObject [
+  makeParentSlot "parent*" cat
+  makeParentSlot "parent*" wonderland
+  makeSlot "name" (makeString "Cheshire Cat")
+]
 // All of these should be OK!
 cheshire |> send "name" |> send "print" 
 cheshire |> send "sound" |> send "print"
